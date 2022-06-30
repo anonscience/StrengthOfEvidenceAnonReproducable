@@ -44,7 +44,7 @@ library(shiny)
 
 # Reading Sample Sizes of Coded Papers
 
-dfSampleSizes <- read.csv("../StrengthOfEvidenceAnonReproducable/Classification_Assignments-Paper_anonymized.csv",
+dfSampleSizes <- read.csv("./Classification_Assignments-Paper_anonymized.csv",
                           colClasses=c("character", "character", "character", "character",
                                        "character", "character", "character", "character", 
                                        "character", "character", "character", "character",
@@ -57,7 +57,7 @@ dfSampleSizes$Sample <- as.numeric(dfSampleSizes$Sample)
 
 # Reading Effect Size Table
 
-dfStatcheck_SLR_ES_N <- read.csv("../StrengthOfEvidenceAnonReproducable/SLR_ES_Master_Table_anonymized.csv", as.is = T)
+dfStatcheck_SLR_ES_N <- read.csv("./SLR_ES_Master_Table_anonymized.csv", as.is = T)
 dfStatcheck_SLR_ES_N <- dfStatcheck_SLR_ES_N[which(is.na(dfStatcheck_SLR_ES_N$Excluded) | dfStatcheck_SLR_ES_N$Excluded == FALSE),]
 
 
