@@ -9,6 +9,32 @@ This Binder project analyses a dataset with effect sizes from scientific papers 
 It computes measures of strength of evidence for the statistical tests involved.
 It spawns a Shiny server and client application as a User Interface.
 
+
+## How to use
+
+### Open RStudio
+
+The Binder version of the software will load from
+   https://mybinder.org/v2/gh/anonscience/StrengthOfEvidenceAnonReproducable.git/HEAD?urlpath=rstudio
+   
+### Open the Shiny app
+
+Load and execute **app.R**
+
+Note that the app will pre-compute a simulation of power and strength-of-evidence
+values to improve responsiveness of the Shiny app. This will take a few minutes 
+during the start-up of the Shiny app.
+
+The Shiny app will open in a new browser window. Ensure that you permit the
+pop-up window.
+
+### Interact with the visualisation
+
+You can choose the type of graph being displayed.
+You can further set parameters for effect size thresholds, bias and prior.
+
+
+
 ## License
 Copyright (c) 2022 Anonymized Author of this work.
 
