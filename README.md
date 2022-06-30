@@ -36,7 +36,7 @@ You can further set parameters for effect size thresholds, bias and prior.
 
 
 ## License
-Copyright (c) 2022 Anonymized Author of this work.
+Copyright (c) 2022 anonscience, anonymized author of this work at github.com
 
 This software is made as available  as is for the purpose of anonymous peer-review.
 The software can be be executed and evaluated by peer-reviewers.
