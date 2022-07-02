@@ -619,7 +619,7 @@ analysis2 <- as.data.frame(lapply(analysis, unlist))
 analysis2$ID <- as.character(analysis2$ID)
 
 
-dfESCombinedWPower <- dplyr::left_join(dfESCombined, analysis2, by = "ID")
+dfESCombinedWPower <- dplyr::left_join(dfESCombined, analysis2, by = c("ID", "ATag"))
 rm(analysis)
 rm(analysis2)
 
@@ -636,17 +636,19 @@ dfESCombinedWPower$RBP.MCC2 <- dfESCombinedWPower$est.p.MCC*(1-FPR)/(dfESCombine
 
 
 server <- function(input, output, session) {
+  visual_N <- 1250
   
   plotScatter <- function(df, xvar = "N", yvar = "1-ppv.MCC", ylabel = {if(input$graph=="ppv" || input$graph=="ppv.MCC"){"Positive Predictive Value (PPV)"}else{"False Positive Risk (FPR)"}}) {
-    plot_scatter <- ggplot(df, aes_string(x=xvar, y=yvar, color="threshold", "shape=as.factor(bias)", group="as.factor(threshold)")) +
+    plot_scatter <- ggplot(df, aes_string(x=xvar, y=yvar, color="threshold", fill="threshold", "shape=as.factor(bias)", group="as.factor(threshold)")) +
       geom_jitter() +
       geom_smooth(method = "loess") +
       geom_hline(yintercept=c(0.5), linetype="dotted") +
       scale_y_continuous(labels = scales::percent, breaks = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1), limits = c(0, 1)) +
-      scale_color_viridis(discrete = TRUE, option = "D") + 
+      scale_color_viridis(discrete = TRUE, option = "D", name = "Effect Size Threshold") + 
+      scale_fill_viridis(discrete = TRUE, option = "D", name = "Effect Size Threshold") + 
       xlab("Sample Size") + ylab(ylabel) +
       theme_bw() +
-      theme(legend.position='none', 
+      theme(legend.position='bottom', 
             plot.background = element_blank(),
             panel.grid.major.x = element_blank(),
             panel.grid.minor.x = element_blank(),
@@ -655,21 +657,48 @@ server <- function(input, output, session) {
     ggMarginal(plot_scatter, type = "density", groupColour = T, groupFill = T, alpha = 0.2, margins = "y")
   }
   
+  plotHeatmap <- function(df) {
+    df %>% dplyr::filter(N < visual_N) %>%
+      dplyr::group_by(ATag, threshold, prior, bias) %>%
+      dplyr::summarise(max.ppv.MCC = max(ppv.MCC)) %>%
+      ggplot(., aes(x=as.factor(prior), y=reorder(ATag, max.ppv.MCC), fill=max.ppv.MCC, group = threshold, color = max.ppv.MCC)) +
+      geom_tile() +
+      scale_color_scico(palette = "vik", name = "Maximal PPV", midpoint = 0.5) +
+      scale_fill_scico(palette = "vik", name = "Maximal PPV", midpoint = 0.5) +
+      xlab("Prior") + ylab("") +
+      theme_bw() +
+      theme(legend.position='bottom',
+            plot.background = element_blank(),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            panel.border = element_blank(),
+            axis.line = element_line(color = 'black'))
+  }
+  
   output$ppvPlot <- renderPlot({
-    visual_N <- 1250
-
     dfESCombinedWPower %>% dplyr::filter(N < visual_N) %>%
           dplyr::filter(threshold %in% input$threshold) %>% 
           dplyr::filter(bias %in% input$bias) %>% 
           dplyr::filter(prior %in% input$prior) %>% plotScatter(., yvar=input$graph)
+  })
+  
+  output$heatPlot <- renderPlot({
+    dfESCombinedWPower %>% dplyr::filter(N < visual_N) %>%
+      dplyr::filter(threshold %in% input$thresholdHeat) %>% 
+      dplyr::filter(bias %in% input$biasHeat) %>% 
+      plotHeatmap()
   })
 }
 
 ui <- fluidPage(
   # useShinyjs(),
   
-  titlePanel("Positive Predictive Value Analysis"),
+  titlePanel("Strength of Evidence Analysis"),
   
+  tabsetPanel(
+    tabPanel("False Positive Risk", fluid = TRUE,
+             h2("False Positive Risk"),
+             p("Distribution of False Positive Risk (FPR) across studies dependent on assumed situation in reality."),
   sidebarLayout(
     sidebarPanel(
       
@@ -677,8 +706,9 @@ ui <- fluidPage(
         "graph",
         "Select the type of graph displayed:",
         choices = 
-          list(`graph type` = list('PPV with MCC'='ppv.MCC', 'PPV'='ppv', 
-                                   'FPR with MCC'='1-ppv.MCC', 'FPR'='1-ppv'))
+          list(`graph type` = list('FPR'='1-ppv.MCC',
+                              'PPV'='ppv.MCC')),
+        selected = 'FPR'
       ),
  
       h3("Parameters:"),
@@ -695,8 +725,8 @@ ui <- fluidPage(
       selectInput(
         "prior",
         "Select the anticipated prior probabiliy:",
-        choices = list(`prior` = list('Confirmatory (.50)'=0.50, 'Intermediate (.20)'=.20, 'Exploratory (.10)'=.10)),
-        selected = c(0.20)
+        choices = list(`prior` = list('Confirmatory (.50)'=.50, 'Intermediate (.20)'=.20, 'Exploratory (.10)'=.10)),
+        selected = c(.20)
       ),
       
       selectInput(
@@ -706,13 +736,168 @@ ui <- fluidPage(
           list(`bias` = list('Well-run RCT (.2)'='0.2', 'Weak RCT (.3)'='0.3', 'Biased study (.8)'='0.8')),
           selected = c(0.3)
       ),
-      
     ),
     
     mainPanel(
-      plotOutput("ppvPlot")
+      plotOutput("ppvPlot"),
+      br(),
+      conditionalPanel(
+        condition = "input.prior == 0.10 && input.bias == 0.8",
+        p(strong("Note: "), "When an exploratory study investigating many relations (prior = .10) 
+          is executed in a biased fashion (u = .80), 
+          then we have can have little confidence in the outcome,
+          irrespective of the effect size thresholds present in reality
+          and statistical power exerted by the study.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.10 && input.bias == 0.3",
+        p(strong("Note: "), "When an exploratory study investigating many relations (prior = .10)
+          is realized as a random-controlled trial (RCT) with some biases (u = .30),
+          we obsesrve a differentiation depending on effect size thresholds in reality 
+          and power achieved by the study.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.10 && input.bias == 0.2",
+        p(strong("Note: "), "An exploratory study investigating many relations (prior = .10)
+          in the form of a well-done random-controlled trial (RCT, u = .20)
+          still bears a considerable false positive risk (> 50%) 
+          even against large effect sizes in reality and with sufficient power achieved.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.20 && input.bias == 0.8",
+        p(strong("Note: "), "In an intermediate case of a study with a prior of .20,
+          we find that an experiment setup with considerable biases (u = .80) diminishes
+          any gains from large effect sizes or great statistical power achieved.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.20 && input.bias == 0.3",
+        p(strong("Note: "), "An intermediate-case study (prior = .20)
+          run as a random-controlled trial (RCT) with some biases (u = .30)
+          can achieve a 60% false positive risk against large effect sizes, 
+          given sufficient statistical power.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.20 && input.bias == 0.2",
+        p(strong("Note: "), "If an intermediate-case study (prior = .20)
+          is executed as well-done random-controlled trial (RCT) with a bias of .20,
+          we observe that the false positive risk reaches the 50% mark for 
+          medium and large effect size thresholds and sufficient statistical power.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.50 && input.bias == 0.8",
+        p(strong("Note: "), "In a confirmatory study with a prior of .50
+          with considerable biases (u = .80), we observe that the 
+          false positive risk after the study is greater than before the study,
+          irrespective of the effect size threshold in reality and the statistical power achieved.
+          The biases of the study muddle the waters.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.50 && input.bias == 0.3",
+        p(strong("Note: "), "Considering a confirmatory study (prior = .50)
+          done as a random-controlled trial with some biases (u = .30),
+          we find that false positive risks less than 40% can be achieved
+          against medium and large effect sizes with suffient statistical power, 
+          against small effect sizes with large samples.")
+      ),
+      conditionalPanel(
+        condition = "input.prior == 0.50 && input.bias == 0.2",
+        p(strong("Note: "), "In a confirmatory study (prior = .50) 
+          executed as a well-done random-controlled trial (RCT) with a bias of u = .20,
+          we have the strongest gain of information reaching a false positive risk 
+          of 30% against medium and large effect size thresholds, given sufficient statistical power.")
+      )
     )
-  )
-)
+  )), # tab panel False Positive Risk
+  tabPanel("Upper-Bound PPV", fluid = TRUE,
+           h2("Upper-Bound PPV"),
+           p("Maximal upper-bound on the Positive Predictive Value (PPV) the studies could have achieved."),
+           
+           sidebarLayout(
+             sidebarPanel(
+
+               h3("Parameters:"),
+
+               selectInput(
+                 "thresholdHeat",
+                 "Select the effect-size theshold:",
+                 choices =
+                   list(`threshold` = list('small', 'medium', 'large')),
+                 selected = c('medium')
+               ),
+
+               selectInput(
+                 "biasHeat",
+                 "Select the anticipated bias:",
+                 choices =
+                   list(`bias` = list('Well-run RCT (.2)'='0.2', 'Weak RCT (.3)'='0.3', 'Biased study (.8)'='0.8')),
+                 selected = c(0.3)
+               ),
+
+             ),
+
+             mainPanel(
+               plotOutput("heatPlot"),
+               br(),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'small' && input.biasHeat == 0.8",
+                 p(strong("Note: "), "Biased studies (u = .80) cannot reach a 50% Positive Predictive Value (PPV)
+                   in face of small effect size thresholds present in reality.")
+               ),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'small' && input.biasHeat == 0.3",
+                 p(strong("Note: "), "For weak random-controlled trials (RCT) with some biases (u = .30) 
+                 against small effect sizes present in reality,
+                   we observe that they can achieve positive predictive values (PPV) greater than 50%
+                   from a prior of .35.")
+               ),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'small' && input.biasHeat == 0.2",
+                 p(strong("Note: "), "Well-done random controlled trials (RCT, u =.20) 
+                   against small effect sizes present in reality
+                   can achieve positive predictive values (PPV) greater than 50% 
+                   from priors of .25.")
+               ),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'medium' && input.biasHeat == 0.8",
+                 p(strong("Note: "), "Against medium effect size thresholds,
+                   biased studies (u = .80) would not reach a positive predictive value (PPV) of 50%.")
+               ),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'medium' && input.biasHeat == 0.3",
+                 p(strong("Note: "), "If we assume studies to be weak random-controlled trials (RCTs) with a bias of u = .30
+                   executed against medium effect sizes, we observe that a number of studies could yield
+                   a positive predictive value (PPV) greater than 50% from a prior of .30.")
+               ),
+               conditionalPanel(
+                 condition = "input.thresholdHeat == 'medium' && input.biasHeat == 0.2",
+                 p(strong("Note: "), "If studies in the field were well-done 
+                   random-controlled trials (RCTs) with a bias of u = .20
+                   pitted against medium effect sizes present in reality,
+                   we would observe that studies could obtain a PPC greater than 50%
+                   from priors of .20."
+                 ),
+                 conditionalPanel(
+                   condition = "input.thresholdHeat == 'large' && input.biasHeat == 0.8",
+                   p(strong("Note: "), "Even against large effect sizes, biased studies
+                     could not obtain a PPV greater than 50%.")
+                 ),
+                 conditionalPanel(
+                   condition = "input.thresholdHeat == 'large' && input.biasHeat == 0.3",
+                   p(strong("Note: "), "Weak random-controlled trials (RCTs) with a bias of u = .30
+                     would fare well against large effect sizes in reality,
+                     reaching a PPV greater than 50% from a prior of .30.")
+                 ),
+                 conditionalPanel(
+                   condition = "input.thresholdHeat == 'large' && input.biasHeat == 0.2",
+                   p(strong("Note: "), "Well-done random controlled trials (RCTs) with a bias of u = .20
+                     pitted against large effect size thresholds in reality yield positive predictive values 
+                     greater than 50% from priors of .20")
+                 )
+               )
+             )
+           )
+  ) # tab panel Max PPV Heatmap
+  ) # tabset panel
+) # fluid page
 
 shinyApp(ui = ui, server = server)
