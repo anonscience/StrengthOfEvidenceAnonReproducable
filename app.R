@@ -38,6 +38,8 @@ library(ggplot2)
 library(ggExtra)
 library(ggridges)
 library(viridis)
+library(scico)
+library(weights)
 library(car)
 library(shiny)
 
@@ -688,6 +690,58 @@ server <- function(input, output, session) {
       dplyr::filter(bias %in% input$biasHeat) %>% 
       plotHeatmap()
   })
+  
+  analysisPlan <- reactive({
+    for (x in seq(from=input$power[1], to=input$power[2], by=0.01)) {
+      for (z in c(0.01, seq(from=0.05, to=0.5, by=0.05))) {
+        for (u in seq(from=input$biasPlanning[1], to=input$biasPlanning[2], by = 0.1)) {
+          if (!exists("analysisP")) {
+            analysisP <- c(z, 
+                              x,
+                              u,
+                              computePPVBias(prior = z, alpha = assumed_sig_level, power = x, bias = u))
+          } else {
+            analysisP <- rbind(analysisP, c(z, 
+                                              x,
+                                              u,
+                                              computePPVBias(prior = z, alpha = assumed_sig_level, power = x, bias = u)))
+          }
+        }
+      }
+    }
+    colnames(analysisP) <- c("prior", "power", "bias", "ppv")
+    return(as.data.frame(analysisP))
+  })
+  
+  output$planPlot <- renderPlot({
+      ggplot(analysisPlan(), aes(x = prior, y=ppv, alpha=power, color=as.factor(bias), fill=as.factor(bias), group = as.factor(bias))) +
+      geom_jitter() +
+      geom_smooth(method = "loess") +
+      geom_abline(intercept = 0, slope = 1, color = "red") +
+      geom_hline(yintercept=c(0.5), linetype="dotted") +
+      geom_vline(xintercept=as.numeric((input$priorPlanningTrue/input$priorPlanningFalse)/(input$priorPlanningTrue/input$priorPlanningFalse+1)), linetype="dashed") +
+      scale_y_continuous(labels = scales::percent, breaks = c(0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1), limits = c(0, 1)) +
+      scale_x_continuous(labels = scales::percent, breaks = c(0, .1, .2, .3, .4, .5), limits = c(0, .6)) +
+      scale_alpha_continuous(labels = scales::percent, name="Power") +
+      scale_color_viridis(discrete = TRUE, option = "D", name = "Bias") + 
+      scale_fill_viridis(discrete = TRUE, option = "D", name = "Bias") + 
+      annotate(geom="text", x=.15, y=.05, label="No Information Threshold", color="red") + 
+      xlab("Prior") + ylab("Positive Predictive Value") +
+      theme_bw() +
+      theme(legend.position='bottom', 
+            plot.background = element_blank(),
+            panel.grid.major.x = element_blank(),
+            panel.grid.minor.x = element_blank(),
+            panel.border = element_blank(),
+            axis.line = element_line(color = 'black'))
+  })
+  
+  output$plannedR <- renderText({
+    paste0("R = ", input$priorPlanningTrue, ":", input$priorPlanningFalse)
+  })
+  output$plannedPrior <- renderText({
+    paste0("prior = ", weights::rd((input$priorPlanningTrue/input$priorPlanningFalse)/(input$priorPlanningTrue/input$priorPlanningFalse+1), digits = 3))
+  })
 }
 
 ui <- fluidPage(
@@ -896,8 +950,61 @@ ui <- fluidPage(
                )
              )
            )
-  ) # tab panel Max PPV Heatmap
+  ), # tab panel Max PPV Heatmap
+  tabPanel("Planning", fluid = TRUE,
+           h2("Planning"),
+           p("Planning for a Positive Predictive Value."),
+           sidebarLayout(
+             sidebarPanel(
+               
+               sliderInput("power", "A priori power:",
+                           min = 0, max = 1,
+                           value = c(.80,.95),
+                           step = 0.01),
+               
+               # sliderInput("es", "Effect size:",
+               #             min = 0, max = 2,
+               #             value = c(.20,.50),
+               #             step = 0.10),
+               
+               sliderInput("biasPlanning", "Bias:",
+                           min = 0, max = 1,
+                           value = c(.20,.30),
+                           step = 0.10),
+               
+               # selectInput(
+               #   "priorPlanning",
+               #   "Select the reference prior:",
+               #   choices = list(`prior` = list('Confirmatory (.50)'=.50, 'Intermediate (.20)'=.20, 'Exploratory (.10)'=.10)),
+               #   selected = c(.20)
+               # ),
+               
+               h5("Anticipated Prior"), 
+               
+               sliderInput("priorPlanningTrue", "Likely number of true relations:",
+                           min = 1, max = 100,
+                           value = 1,
+                           step = 1
+                           ),
+               
+               sliderInput("priorPlanningFalse", "Likely number of false relations:",
+                           min = 1, max = 100,
+                           value = 1,
+                           step = 1
+                           ),
+               
+               textOutput("plannedR"), textOutput("plannedPrior"),
+             ),
+             
+             mainPanel(
+               plotOutput("planPlot")
+             )
+           )
+  ) # tab panel Planning
   ) # tabset panel
 ) # fluid page
 
 shinyApp(ui = ui, server = server)
+
+
+
