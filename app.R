@@ -674,7 +674,10 @@ server <- function(input, output, session) {
             axis.text.y = element_blank(),
             axis.ticks.y = element_blank(),
             panel.border = element_blank(),
-            axis.line = element_line(color = 'black'))
+            axis.line = element_line(color = 'black')) +
+      facet_grid(
+        factor(bias) ~   
+          threshold)
   }
   
   output$ppvPlot <- renderPlot({
@@ -876,7 +879,8 @@ ui <- fluidPage(
                  "Select the effect-size theshold:",
                  choices =
                    list(`threshold` = list('small', 'medium', 'large')),
-                 selected = c('medium')
+                 multiple = TRUE,
+                 selected = c('small', 'medium', 'large')
                ),
 
                selectInput(
